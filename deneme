@@ -1,0 +1,873 @@
+/***************************************************************************************
+    Name    : LCD Button Shield Menu
+    Author  : Paul Siewert
+    Created : June 14, 2016
+    Last Modified: June 14, 2016
+    Version : 1.0
+    Notes   : This code is for use with an Arduino Uno and LCD/button shield. The
+              intent is for anyone to use this program to give them a starting
+              program with a fully functional menu with minimal modifications
+              required by the user.
+    License : This program is free software. You can redistribute it and/or modify
+              it under the terms of the GNU General Public License as published by
+              the Free Software Foundation, either version 3 of the License, or
+              (at your option) any later version.
+              This program is distributed in the hope that it will be useful,
+              but WITHOUT ANY WARRANTY; without even the implied warranty of
+              MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+              GNU General Public License for more details.
+ ***************************************************************************************/
+/*
+   This program is designed to get you as close as possible to a finished menu for the standard Arduino Uno LCD/button shield. The only required modifications
+   are to add as menu items to the master menu (menuItems array) and then modify/adjust the void functions below for each of those selections.
+   Bu program, standart Arduino Uno LCD / düğme siperi için hazır bir menüye olabildiğince yakın olmanız için tasarlanmıştır. Sadece gerekli değişiklikler
+   ana menüye (menuItems dizisi) menü öğeleri eklemek ve ardından bu seçimlerin her biri için aşağıdaki boşluk işlevlerini değiştirmek / ayarlamaktır.
+*/
+
+/* You can have up to 10 menu items in the menuItems[] array below without having to change the base programming at all. Name them however you'd like. Beyond 10 items, you will have to add additional "cases" in the switch/case
+ section of the operateMainMenu() function below. You will also have to add additional void functions (i.e. menuItem11, menuItem12, etc.) to the program.
+ Temel programlamayı değiştirmek zorunda kalmadan, menuItems [] dizisinde 10 taneye kadar menü öğesine sahip olabilirsiniz. İstediğiniz gibi adlandırın. 10 öğenin ötesinde, anahtar / kutuya ek "vakalar" eklemeniz gerekecek
+ operaMainMenu () fonksiyonunun aşağıdaki kısmı. Ayrıca programa ek boşluk fonksiyonları (yani, menuItem11, menuItem12, vb.) Eklemeniz gerekecektir.
+ */
+String menuItems[] = {"Sensor 1", "Sensor 2", "Ortalama", "En Dusuk", "En Yuksek", "ITEM 6", "ITEM 7","ITEM 8", "ITEM 9", "ITEM 10", "ITEM 11","ITEM 12"};
+
+// Navigation button variables
+//   char temp1F[6]; 
+  //char hum1F[6];
+  float hum1,temp1,temp2,hum2;
+ 
+
+int readKey;
+int savedDistance = 0;
+
+// Menu control variables
+int menuPage = 0;
+int maxMenuPages = round((sizeof(menuItems) / sizeof(String)) - 2); 
+int cursorPosition = 0;
+
+/* Creates 3 custom characters for the menu display
+ *  Menü ekranı için 3 özel karakter oluşturur
+ *  
+ */
+ byte Derece[8] = {
+  B00100,
+  B01010,
+  B01010,
+  B01110,
+  B01110,
+  B11111,
+  B11111,
+  B01110
+};
+byte Nem[8] = {
+  B00100,
+  B00100,
+  B01010,
+  B01010,
+  B10001,
+  B10001,
+  B10001,
+  B01110
+};
+byte downArrow[8] = {
+  0b00100, //   *
+  0b00100, //   *
+  0b00100, //   *
+  0b00100, //   *
+  0b00100, //   *
+  0b10101, // * * *
+  0b01110, //  ***
+  0b00100  //   *
+};
+
+byte upArrow[8] = {
+  0b00100, //   *
+  0b01110, //  ***
+  0b10101, // * * *
+  0b00100, //   *
+  0b00100, //   *
+  0b00100, //   *
+  0b00100, //   *
+  0b00100  //   *
+};
+
+byte menuCursor[8] = {
+  B01000, //  *
+  B00100, //   *
+  B00010, //    *
+  B00001, //     *
+  B00010, //    *
+  B00100, //   *
+  B01000, //  *
+  B00000  //
+};
+
+byte kucukI[8] = {
+  B00000,
+  B00000,
+  B00000,
+  B00100,
+  B00100,
+  B00100,
+  B00100,
+  B00000
+};
+
+byte noktaliu[8] = {
+  B00000,
+  B01010,
+  B00000,
+  B01010,       // küçük ü harfi
+  B01010,
+  B01010,
+  B01110,
+  B00000
+};
+
+byte kuyruklus[8] = {
+  B00000,
+  B00000,
+  B01110,
+  B10000,
+  B01110,
+  B00001,
+  B11110,
+  B00100
+};
+
+#include <Wire.h>
+#include <LiquidCrystal.h>
+#include <DHT.h>
+
+
+// Setting the LCD shields pins
+LiquidCrystal lcd(8, 9, 4, 5, 6, 7);
+#define DHT1PIN 2  // what pin we're connected to
+#define DHT2PIN 3
+
+#define DHT1TYPE DHT22
+#define DHT2TYPE DHT22  
+DHT dht1(DHT1PIN, DHT1TYPE);
+DHT dht2(DHT2PIN, DHT2TYPE);
+
+void setup() {
+
+  // Initializes serial communication
+  // Seri haberleşmeyi başlatır
+  Serial.begin(9600);
+
+  // Initializes and clears the LCD screen
+  // LCD ekranı başlatır ve temizler
+  lcd.begin(16, 2);
+  lcd.clear();
+    // Creates the byte for the 3 custom characters
+  // 3 özel karakter için bayt oluşturur
+  lcd.createChar(0, menuCursor);
+  lcd.createChar(1, upArrow);
+  lcd.createChar(2, downArrow);
+  lcd.createChar(3, Derece);
+  lcd.createChar(4, Nem);
+  lcd.createChar(5, kucukI); // ı harfi
+  lcd.createChar(6, noktaliu);
+  lcd.createChar(7, kuyruklus);
+  dht1.begin();
+  dht2.begin();
+    pinMode(1, OUTPUT);          // sets the digital pin 13 as output
+
+
+
+
+}
+
+
+void dereceolcum1(){
+while (analogRead(0)<1024){
+
+ float hum1 = dht1.readHumidity();
+ float temp1 = dht1.readTemperature();
+ delay(500);
+ char temp1F[6]; 
+ char hum1F[6];
+ dtostrf(temp1, 5, 1, temp1F);
+ dtostrf(hum1, 2, 0, hum1F);
+ lcd.setCursor(0,0);
+ lcd.print(analogRead(0));
+ lcd.setCursor(0,1);
+ lcd.write(byte(3)); 
+ lcd.print(temp1F);
+ lcd.print(" ");
+ lcd.print((char)223);
+ lcd.print("C ");
+ lcd.write(byte(4));
+ lcd.print(" ");
+ lcd.print(hum1F);
+ lcd.print("%"); 
+ if (analogRead(0)==409){
+  break;}}
+}
+
+void dereceolcum2(){
+  while (analogRead(0)<1024){
+
+
+float temp2 , hum2;
+ hum2 = dht2.readHumidity();
+ temp2 = dht2.readTemperature();
+ delay(500);
+ char temp2F[6]; 
+ char hum2F[6];
+ dtostrf(temp2, 5, 1, temp2F);
+ dtostrf(hum2, 2, 0, hum2F);
+ lcd.clear();
+ lcd.setCursor(0,1);
+ lcd.write(byte(3)); 
+ lcd.print(temp2F);
+ lcd.print(" ");
+ lcd.print((char)223);
+ lcd.print("C ");
+
+ lcd.write(byte(4));
+ lcd.print(" ");
+ lcd.print(hum2F);
+ lcd.print("%");
+  if (analogRead(0)==409){
+  break;}}
+
+}
+void dereceolcumort(){
+  
+   float temp2 , hum2, temp1, hum1;
+     while (analogRead(0)<1024){
+   
+  hum1 = dht1.readHumidity();
+  temp1 = dht1.readTemperature();
+  hum2 = dht2.readHumidity();
+  temp2 = dht2.readTemperature();
+  float ortder = (temp1 + temp2) / 2 ;
+  float orthum = (hum1 + hum2) / 2;
+  delay(100);
+ char temportF[6]; 
+ char humortF[6];
+ dtostrf(ortder, 5, 1, temportF);
+ dtostrf(orthum, 2, 0, humortF);
+ lcd.clear();
+ lcd.setCursor(0,0);
+ lcd.print("Ortalama S");
+ lcd.write(byte(5));
+ lcd.print("cakl");
+ lcd.write(byte(5));
+ lcd.print("k");
+ lcd.setCursor(0,1);
+ lcd.write(byte(3)); 
+ lcd.print(temportF);
+ lcd.print(" ");
+ lcd.print((char)223);
+ lcd.print("C ");
+
+ lcd.write(byte(4));
+ lcd.print(" ");
+ lcd.print(humortF);
+ lcd.print("%");
+   if (analogRead(0)==409){
+  break;}}
+}
+void endusukderece(){
+     while (analogRead(0)<1024){
+    
+    float temp2 , hum2, temp1, hum1, endusuk;
+  hum1 = dht1.readHumidity();
+  temp1 = dht1.readTemperature();
+  hum2 = dht2.readHumidity();
+  temp2 = dht2.readTemperature();
+   float endusukder =min(temp1,temp2);
+   float endusuknem = min(hum1,hum2);
+   delay(150);
+   char endusukderF[6]; 
+   char endusuknemF[6];
+       dtostrf(endusukder, 5, 1, endusukderF);
+       dtostrf(endusuknem, 2, 0, endusuknemF);
+
+ lcd.clear();
+ lcd.setCursor(0,0);
+ lcd.print("En D");
+ lcd.write(byte(6));
+ lcd.write(byte(7));
+ lcd.write(byte(6));
+ lcd.print("k");
+ if (endusukder == temp1) {
+  lcd.print("   (1)");
+ }
+  else if (endusukder == temp2){
+    lcd.print("   (2)");
+     }
+  
+ lcd.setCursor(0,1);
+ lcd.write(byte(3)); 
+ lcd.print(endusukderF);
+ lcd.print(" ");
+ lcd.print((char)223);
+ lcd.print("C ");
+ lcd.write(byte(4));
+ lcd.print(" ");
+ lcd.print(endusuknemF);
+ lcd.print("%");
+   if (analogRead(0)==409){
+  break;}}
+  
+}
+void enyuksekderece(){
+      while (analogRead(0)<1024){
+  
+ float temp2 , hum2, temp1, hum1, enyuksek;
+  hum1 = dht1.readHumidity();
+  temp1 = dht1.readTemperature();
+  hum2 = dht2.readHumidity();
+  temp2 = dht2.readTemperature();
+   float enyuksekder =max(temp1,temp2);
+   float enyukseknem = max(hum1,hum2);
+   delay(150);
+   char enyuksekderF[6]; 
+   char enyukseknemF[6];
+       dtostrf(enyuksekder, 5, 1, enyuksekderF);
+       dtostrf(enyukseknem, 2, 0, enyukseknemF);
+        lcd.clear();
+ lcd.setCursor(0,0);
+ lcd.print("En Y");
+ lcd.write(byte(6));
+ lcd.print("ksek");
+ if (enyuksekder == temp1) {
+  lcd.print("   (1)");
+ }
+  else if (enyuksekder == temp2){
+    lcd.print("   (2)");
+     }
+  
+ lcd.setCursor(0,1);
+ lcd.write(byte(3)); 
+ lcd.print(enyuksekderF);
+ lcd.print(" ");
+ lcd.print((char)223);
+ lcd.print("C ");
+ lcd.write(byte(4));
+ lcd.print(" ");
+ lcd.print(enyukseknemF);
+ lcd.print("%");
+    if (analogRead(0)==409){
+  break;}}
+}
+   
+void alarm(){
+  
+}
+
+
+void loop(){
+
+      
+ mainMenuDraw();
+ drawCursor();
+ operateMainMenu();
+  float temp2 , hum2, temp1, hum1, endusuk;
+  hum1 = dht1.readHumidity();
+  temp1 = dht1.readTemperature();
+  hum2 = dht2.readHumidity();
+  temp2 = dht2.readTemperature();
+   float endusukder =min(temp1,temp2);
+   float endusuknem = min(hum1,hum2);
+    Serial.println(endusukder);
+
+   /*   if (endusukder == 23){
+      digitalWrite(1,HIGH);
+        //delay(2000);
+    }
+    else {
+      digitalWrite(1,LOW);
+    }
+ */
+ 
+
+
+
+}
+
+// This function will generate the 2 menu items that can fit on the screen. They will change as you scroll through your menu. Up and down arrows will indicate your current menu position.
+// Bu fonksiyon, ekrana sığabilecek 2 menü öğesi üretecektir. Menünüzde gezinirken değişecekler. Yukarı ve aşağı oklar geçerli menü konumunuzu gösterir.
+void mainMenuDraw() {
+  Serial.print(menuPage);
+  lcd.clear();
+  lcd.setCursor(1, 0);
+  lcd.print(menuItems[menuPage]);
+  lcd.setCursor(1, 1);
+  lcd.print(menuItems[menuPage + 1]);
+  if (menuPage == 0) {
+    lcd.setCursor(15, 1);
+    lcd.write(byte(2));
+  } else if (menuPage > 0 and menuPage < maxMenuPages) {
+    lcd.setCursor(15, 1);
+    lcd.write(byte(2));
+    lcd.setCursor(15, 0);
+    lcd.write(byte(1));
+  } else if (menuPage == maxMenuPages) {
+    lcd.setCursor(15, 0);
+    lcd.write(byte(1));
+  }
+}
+
+// When called, this function will erase the current cursor and redraw it based on the cursorPosition and menuPage variables.
+// Çağrıldığında, bu işlev mevcut imleci siler ve imleçPosition ve menuPage değişkenlerini temel alarak yeniden çizer.
+void drawCursor() {
+  for (int x = 0; x < 2; x++) {     // Erases current cursor  Mevcut imleci siler
+    lcd.setCursor(0, x);
+    lcd.print(" ");
+  }
+
+  /* The menu is set up to be progressive (menuPage 0 = Item 1 & Item 2, menuPage 1 = Item 2 & Item 3, menuPage 2 = Item 3 & Item 4), so
+   in order to determine where the cursor should be you need to see if you are at an odd or even menu page and an odd or even cursor position.
+     Menü kademeli olacak şekilde ayarlandı (menuSayfa 0 = Öğe 1 ve Öğe 2, menuSayfa 1 = Öğe 2 ve Öğe 3, menüSayfa 2 = Öğe 3 ve Öğe 4),
+   imlecin nerede olması gerektiğini belirlemek için tek veya çift menü sayfasında ve tek veya imleç konumunda olup olmadığınızı görmeniz gerekir.
+*/
+  if (menuPage % 2 == 0) {
+    if (cursorPosition % 2 == 0) {  // If the menu page is even and the cursor position is even that means the cursor should be on line 1
+      lcd.setCursor(0, 0);          // Menü sayfası eşitse ve imleç konumu eşitse, imlecin 1. satırda olması gerektiği anlamına gelir.
+      lcd.write(byte(0));
+    }
+    if (cursorPosition % 2 != 0) {  // If the menu page is even and the cursor position is odd that means the cursor should be on line 2
+      lcd.setCursor(0, 1);          // Eğer menü sayfası düz ve imleç pozisyonu tuhaf ise, imlecin 2. satırda olması gerektiği anlamına gelir.
+      lcd.write(byte(0));
+    }
+  }
+  if (menuPage % 2 != 0) {
+    if (cursorPosition % 2 == 0) {  // If the menu page is odd and the cursor position is even that means the cursor should be on line 2
+      lcd.setCursor(0, 1);          // Menü sayfası tuhafsa ve imleç pozisyonu eşitse, imlecin 2. satırda olması gerektiği anlamına gelir.
+      lcd.write(byte(0));
+    }
+    if (cursorPosition % 2 != 0) {  // If the menu page is odd and the cursor position is odd that means the cursor should be on line 1
+      lcd.setCursor(0, 0);          //Menü sayfası tuhafsa ve imleç pozisyonu tuhafsa, imlecin 1. satırda olması gerektiği anlamına gelir.
+      lcd.write(byte(0));
+    }
+  }
+}
+
+
+void operateMainMenu() {
+  int activeButton = 0;
+  while (activeButton == 0) {
+    int button;
+    readKey = analogRead(0);
+    if (readKey < 790) {
+      delay(100);
+      readKey = analogRead(0);
+    }
+    button = evaluateButton(readKey);
+    switch (button) {
+      case 0: // When button returns as 0 there is no action taken // Düğme 0 olarak döndüğünde işlem yapılmaz
+        break;
+      case 1:  // This case will execute if the "forward" button is pressed // "ileri" düğmesine basıldığında bu durum uygulanacak
+        button = 0;
+        switch (cursorPosition) { // Burada seçilen durum, hangi menü sayfasındaki ve imlecin bulunduğu yere bağlıdır.
+          case 0:
+            menuItem1();
+            break;
+          case 1:
+            menuItem2();
+            break;
+          case 2:
+            menuItem3();
+            break;
+          case 3:
+            menuItem4();
+            break;
+          case 4:
+            menuItem5();
+            break;
+          case 5:
+            menuItem6();
+            break;
+          case 6:
+            menuItem7();
+            break;
+          case 7:
+            menuItem8();
+            break;
+          case 8:
+            menuItem9();
+            break;
+          case 9:
+            menuItem10();
+            break;
+          case 10:
+            menuItem11();
+            break;  
+          case 11:
+            menuItem12();
+            break;  
+         
+        }
+        activeButton = 1;
+        mainMenuDraw();
+        drawCursor();
+        break;
+      case 2:
+        button = 0;
+        if (menuPage == 0) {
+          cursorPosition = cursorPosition - 1;
+          cursorPosition = constrain(cursorPosition, 0, ((sizeof(menuItems) / sizeof(String)) - 2));
+        }
+        if (menuPage % 2 == 0 and cursorPosition % 2 == 0) {
+          menuPage = menuPage - 1;
+          menuPage = constrain(menuPage, 0, maxMenuPages);
+        }
+
+        if (menuPage % 2 != 0 and cursorPosition % 2 != 0) {
+          menuPage = menuPage - 1;
+          menuPage = constrain(menuPage, 0, maxMenuPages);
+        }
+
+        cursorPosition = cursorPosition - 1;
+        cursorPosition = constrain(cursorPosition, 0, ((sizeof(menuItems) / sizeof(String)) - 2));
+
+        mainMenuDraw();
+        drawCursor();
+        activeButton = 1;
+        break;
+      case 3:
+        button = 0;
+        if (menuPage % 2 == 0 and cursorPosition % 2 != 0) {
+          menuPage = menuPage + 1;
+          menuPage = constrain(menuPage, 0, maxMenuPages);
+        }
+
+        if (menuPage % 2 != 0 and cursorPosition % 2 == 0) {
+          menuPage = menuPage + 1;
+          menuPage = constrain(menuPage, 0, maxMenuPages);
+        }
+
+        cursorPosition = cursorPosition + 1;
+        cursorPosition = constrain(cursorPosition, 0, ((sizeof(menuItems) / sizeof(String)) - 1));
+        mainMenuDraw();
+        drawCursor();
+        activeButton = 1;
+        break;
+    }
+  }
+}
+
+// This function is called whenever a button press is evaluated. The LCD shield works by observing a voltage drop across the buttons all hooked up to A0.
+// Bu fonksiyon, bir tuşa basıldığında değerlendirilir. LCD ekran, hepsi A0'a bağlı düğmelerin üzerinde bir voltaj düşüşü gözlemleyerek çalışır.
+int evaluateButton(int x) {
+  int result = 0;
+  if (x < 50) {
+    result = 1; // right
+  } else if (x < 195) {
+    result = 2; // up
+  } else if (x < 380) {
+    result = 3; // down
+  } else if (x < 790) {
+    result = 4; // left
+  }
+  return result;
+}
+
+/* If there are common usage instructions on more than 1 of your menu items you can call this function from the sub
+// menus to make things a little more simplified. If you don't have common instructions or verbage on multiple menus
+// I would just delete this void. You must also delete the drawInstructions()function calls from your sub menu functions.
+Menü öğelerinin 1’inden fazlasında ortak kullanım talimatları varsa, bu işlevi alttan arayabilirsiniz.
+Menüleri işleri biraz daha basit hale getirmek için. Birden fazla menü hakkında genel talimatlarınız veya eksiğiniz yoksa
+ Ben sadece bu boşluğu silmek istiyorum. DrawInstructions () işlev çağrılarını alt menü işlevlerinden de silmelisiniz.
+*/
+void drawInstructions() {
+  lcd.setCursor(0, 1); // Set cursor to the bottom line // İmleci en alt satıra ayarla
+  lcd.print("Use ");
+  lcd.write(byte(1)); // Up arrow Yukarı Ok
+  lcd.print("/");
+  lcd.write(byte(2)); // Down arrow Aşağı Ok
+  lcd.print(" buttons");
+}
+
+
+
+
+ 
+void menuItem1() { // Function executes when you select the 2nd item from main menu Ana menüden 2. maddeyi seçtiğinizde işlev yürütülür
+  int activeButton = 0;
+
+ 
+
+ 
+ lcd.clear();
+dereceolcum1();
+
+
+ 
+ // while (activeButton == 0) {
+  int button;
+   // readKey = analogRead(0);
+   // if (readKey < 790) {
+     //delay(100);
+      //readKey = analogRead(0);
+    //}
+  //  button = evaluateButton(readKey);
+    switch (button) {
+      case 4:  // This case will execute if the "back" button is pressed  Bu durumda "geri" düğmesine basıldığında yürütülür
+        button = 0;
+        activeButton = 1;
+        break;
+    }
+    }
+  
+
+
+void menuItem2() { // Function executes when you select the 2nd item from main menu // Ana menüden 2. maddeyi seçtiğinizde işlev yürütülür
+  int activeButton = 0;
+
+ lcd.clear();
+ dereceolcum2();
+  while (activeButton == 0) {
+    int button;
+    readKey = analogRead(0);
+    if (readKey < 790) {
+      delay(100);
+      readKey = analogRead(0);
+    }
+    button = evaluateButton(readKey);
+    switch (button) {
+      case 4:  // This case will execute if the "back" button is pressed
+        button = 0;
+        activeButton = 1;
+        break;
+    }
+  }
+}
+
+void menuItem3() { // Function executes when you select the 3rd item from main menu
+  int activeButton = 0;
+ lcd.clear();
+ dereceolcumort();
+   while (activeButton == 0) {
+    int button;
+    readKey = analogRead(0);
+    if (readKey < 790) {
+      delay(100);
+      readKey = analogRead(0);
+    }
+    button = evaluateButton(readKey);
+    switch (button) {
+      case 4:  // This case will execute if the "back" button is pressed
+        button = 0;
+        activeButton = 1;
+        break;
+    }
+  }
+}
+
+void menuItem4() { // Function executes when you select the 4th item from main menu
+  int activeButton = 0;
+
+lcd.clear();
+endusukderece();
+
+  
+
+  while (activeButton == 0) {
+    int button;
+    readKey = analogRead(0);
+    if (readKey < 790) {
+      delay(100);
+      readKey = analogRead(0);
+    }
+    button = evaluateButton(readKey);
+    switch (button) {
+      case 4:  // This case will execute if the "back" button is pressed
+        button = 0;
+        activeButton = 1;
+        break;
+    }
+  }
+}
+
+void menuItem5() { // Function executes when you select the 5th item from main menu
+  int activeButton = 0;
+  lcd.clear();
+enyuksekderece();
+  while (activeButton == 0) {
+    int button;
+    readKey = analogRead(0);
+    if (readKey < 790) {
+      delay(100);
+      readKey = analogRead(0);
+    }
+    button = evaluateButton(readKey);
+    switch (button) {
+      case 4:  // This case will execute if the "back" button is pressed
+        button = 0;
+        activeButton = 1;
+        break;
+    }
+  }
+}
+
+void menuItem6() { // Function executes when you select the 6th item from main menu
+  int activeButton = 0;
+
+  lcd.clear();
+  lcd.setCursor(3, 0);
+  lcd.print("Sub Menu 6");
+
+  while (activeButton == 0) {
+    int button;
+    readKey = analogRead(0);
+    if (readKey < 790) {
+      delay(100);
+      readKey = analogRead(0);
+    }
+    button = evaluateButton(readKey);
+    switch (button) {
+      case 4:  // This case will execute if the "back" button is pressed
+        button = 0;
+        activeButton = 1;
+        break;
+    }
+  }
+}
+
+void menuItem7() { // Function executes when you select the 7th item from main menu
+  int activeButton = 0;
+
+  lcd.clear();
+  lcd.setCursor(3, 0);
+  lcd.print("Sub Menu 7");
+
+  while (activeButton == 0) {
+    int button;
+    readKey = analogRead(0);
+    if (readKey < 790) {
+      delay(100);
+      readKey = analogRead(0);
+    }
+    button = evaluateButton(readKey);
+    switch (button) {
+      case 4:  // This case will execute if the "back" button is pressed
+        button = 0;
+        activeButton = 1;
+        break;
+    }
+  }
+}
+
+void menuItem8() { // Function executes when you select the 8th item from main menu
+  int activeButton = 0;
+
+  lcd.clear();
+  lcd.setCursor(3, 0);
+  lcd.print("Sub Menu 8");
+
+  while (activeButton == 0) {
+    int button;
+    readKey = analogRead(0);
+    if (readKey < 790) {
+      delay(100);
+      readKey = analogRead(0);
+    }
+    button = evaluateButton(readKey);
+    switch (button) {
+      case 4:  // This case will execute if the "back" button is pressed
+        button = 0;
+        activeButton = 1;
+        break;
+    }
+  }
+}
+
+void menuItem9() { // Function executes when you select the 9th item from main menu
+  int activeButton = 0;
+
+  lcd.clear();
+  lcd.setCursor(3, 0);
+  lcd.print("Sub Menu 9");
+
+  while (activeButton == 0) {
+    int button;
+    readKey = analogRead(0);
+    if (readKey < 790) {
+      delay(100);
+      readKey = analogRead(0);
+    }
+    button = evaluateButton(readKey);
+    switch (button) {
+      case 4:  // This case will execute if the "back" button is pressed
+        button = 0;
+        activeButton = 1;
+        break;
+    }
+  }
+}
+
+void menuItem10() { // Function executes when you select the 10th item from main menu
+  int activeButton = 0;
+
+  lcd.clear();
+  lcd.setCursor(3, 0);
+  lcd.print("Sub Menu 10");
+
+  while (activeButton == 0) {
+    int button;
+    readKey = analogRead(0);
+    if (readKey < 790) {
+      delay(100);
+      readKey = analogRead(0);
+    }
+    button = evaluateButton(readKey);
+    switch (button) {
+      case 4:  // This case will execute if the "back" button is pressed
+        button = 0;
+        activeButton = 1;
+        break;
+    }
+  }
+}
+void menuItem11() { // Function executes when you select the 9th item from main menu
+  int activeButton = 0;
+
+  lcd.clear();
+  lcd.setCursor(3, 0);
+  lcd.print("Sub Menu 11");
+
+  while (activeButton == 0) {
+    int button;
+    readKey = analogRead(0);
+    if (readKey < 790) {
+      delay(100);
+      readKey = analogRead(0);
+    }
+    button = evaluateButton(readKey);
+    switch (button) {
+      case 4:  // This case will execute if the "back" button is pressed
+        button = 0;
+        activeButton = 1;
+        break;
+    }
+  }
+}
+void menuItem12() { // Function executes when you select the 9th item from main menu
+  int activeButton = 0;
+
+  lcd.clear();
+  lcd.setCursor(3, 0);
+  lcd.print("Sub Menu 12");
+
+  while (activeButton == 0) {
+    int button;
+    readKey = analogRead(0);
+    if (readKey < 790) {
+      delay(100);
+      readKey = analogRead(0);
+    }
+    button = evaluateButton(readKey);
+    switch (button) {
+      case 4:  // This case will execute if the "back" button is pressed
+        button = 0;
+        activeButton = 1;
+        break;
+    }
+  }
+}
